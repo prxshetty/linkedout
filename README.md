@@ -19,4 +19,3 @@ A web application that updates your resume/ CV based on the preferred job descri
 ## Deployment
 
 - Docker
-- Railway or Render - they are free tier deployment platforms
