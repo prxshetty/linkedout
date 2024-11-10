@@ -14,6 +14,18 @@ if choice == "Scrape Job Description":
             st.write("Keywords:", data["keywords"])
         else:
             st.write("Error scraping job description")
+    post_text = st.text_area("Enter the Job Post Description")
+    if st.button("Analyze"):
+        response = requests.post(
+            "http://localhost:8000/analyze", 
+            json={"description": post_text}
+        )
+        if response.status_code == 200:
+            data = response.json()
+            st.write("Job Description analyzed Successfully!")
+            st.write("Keywords:", data["keywords"])
+        else:
+            st.write("Error analyzing job description")
 elif choice == "Upload Resume":
     st.subheader("Upload your Resume")
     file = st.file_uploader("Choose a PDF or DOCX file", type = ["pdf", "docx"])
