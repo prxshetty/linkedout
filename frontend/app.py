@@ -32,6 +32,29 @@ if choice == "Scrape Job Description":
                 st.warning("No keywords were extracted. Please check the input text.")
         else:
             st.error(f"Error analyzing job description: {response.text}")
+
+    if st.button("Analyze with AI"):
+        if not post_text:
+            st.error("Please enter some text to analyze")
+        else:
+            st.spinner("Analyzing with AI...")
+            response = requests.post(
+                "http://localhost:8000/analyze_ai", 
+                json={"description": post_text}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                print("api response", data)
+                if data["keywords"]:
+                    st.success("AI Analysis Complete!")
+                    st.write("Required Technical Skills")
+                    for skill in data["keywords"]:
+                        st.write(f"{skill}")
+                else:
+                    st.warning("No keywords were extracted. Please check the input text.")
+            else:
+                st.error(f"Error in AI Analysis: {response.text}")
+
 elif choice == "Upload Resume":
     st.subheader("Upload your Resume")
     file = st.file_uploader("Choose a PDF or DOCX file", type = ["pdf", "docx"])
