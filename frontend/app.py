@@ -57,16 +57,84 @@ if choice == "Scrape Job Description":
 
 elif choice == "Upload Resume":
     st.subheader("Upload your Resume")
-    file = st.file_uploader("Choose a PDF or DOCX file", type = ["pdf", "docx"])
-    if st.button("Upload"):
-        if file.type == 'application/pdf':
-            response = requests.post("http://localhost:8000/upload_pdf", files = {"file": file})
-        elif file.type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            response = requests.post("http://localhost:8000/upload_docx", files = {"file": file})
-        if response.status_code == 200:
-            st.success(response.json()['message'])
-        else:
-            st.write("Please upload a valid PDF or DOCX file")
+    upload_type = st.radio("Select upload type", ["Resume File", "Overleaf Code"])
+
+
+    if upload_type == "Resume File":
+        file = st.file_uploader("Choose a PDF or DOCX file", type = ["pdf", "docx"])
+        if st.button("Upload Resume"):
+            if file is not None:
+                files = {"file": (file.name, file.getvalue(), file.type)}
+                if file.type == 'application/pdf':
+                    response = requests.post("http://localhost:8000/upload_pdf", files = file)
+                elif file.type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                    response = requests.post("http://localhost:8000/upload_docx", files = file)
+                if response.status_code == 200:
+                    st.success(response.json()['message'])
+                else:
+                    st.write("Upload Failed: {response.text}")
+            else:
+                st.write("Please upload a file first")
+
+    elif upload_type == "Overleaf Code":
+        st.markdown("""
+        ### Instructions:
+        1. Paste your complete LaTeX code (from \\documentclass to \\end{document})
+        2. Enter keywords separated by new lines
+        """)
+        
+        latex_code = st.text_area(
+            "Enter your complete LaTeX Code",
+            height=300,
+            help="Paste your entire LaTeX document, including \\documentclass and \\end{document}"
+        )
+        
+        keywords = st.text_area(
+            "Enter keywords (one per line)",
+            height=100,
+            help="Enter each keyword on a new line"
+        )
+        
+        if st.button("Optimize Resume"):
+            if not latex_code or not keywords:
+                st.error("Please provide both LaTeX code and keywords")
+                st.stop()
+                
+            if not latex_code.strip().startswith('\\documentclass'):
+                st.error("LaTeX code must start with \\documentclass")
+                st.stop()
+                
+            if not latex_code.strip().endswith('\\end{document}'):
+                st.error("LaTeX code must end with \\end{document}")
+                st.stop()
+
+            response = requests.post(
+                "http://localhost:8000/optimize_latex",
+                json={
+                    "latex_code": latex_code,
+                    "keywords": keywords.split('\n')
+                }
+            )
+                
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "success":
+                    optimized_latex_result = data.get("optimized_latex")
+                    st.success("Resume optimized successfully!")
+                    st.text_area("Optimized LaTeX Code", optimized_latex_result, height=300)
+                    if st.button("Download Optimized LaTeX"):
+                        st.download_button(
+                            "Download LaTeX file",
+                            optimized_latex_result,
+                            file_name="optimized_resume.tex",
+                            mime="text/plain"
+                        )
+                else:
+                    st.error(f"Optimization failed: {data.get('message', 'Unknown error')}")
+            else:
+                st.error(f"Request failed: {response.text}")
+
+
 elif choice == "User Login":
     st.subheader("Register")
     username = st.text_input("Username")

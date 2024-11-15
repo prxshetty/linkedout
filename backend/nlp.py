@@ -151,22 +151,7 @@ def analyze_with_ai(text: str) -> List[str]:
                 {
                     "role": "system",
                     "content": """You are an expert technical recruiter specializing in data science and AI roles. 
-                    Your task is to analyze job descriptions and extract key technical skills, tools, and requirements.
-                    Focus on:
-                    - Programming languages
-                    - Data science libraries and frameworks
-                    - Machine learning and deep learning tools
-                    - Database technologies
-                    - Data visualization tools
-                    - Cloud platforms
-                    - Version control systems
-                    - Big data technologies
-                    - Statistical analysis methods
-                    
-                    Return your response in this exact JSON format:
-                    {"technical_skills": ["skill1", "skill2", "skill3", ...]}
-                    
-                    Limit your response to the most important 20 technical terms, prioritizing specific tools and technologies mentioned in the job description."""
+                    Your task is to analyze job descriptions and extract key technical skills, tools, and requirements."""
                 },
                 {
                     "role": "user",
@@ -174,19 +159,77 @@ def analyze_with_ai(text: str) -> List[str]:
                 }
             ],
             temperature=0.2,
-            max_tokens=400,
-            response_format={"type": "json_object"}
+            max_tokens=400
         )
-        print("OpenAI Response:", response.choices[0].message.content)
-
-        result = json.loads(response.choices[0].message.content)
-        if isinstance(result, dict) and "technical_skills" in result:
-            return result["technical_skills"]
-        return []
+        
+        result = response.choices[0].message.content
+        try:
+            parsed_result = json.loads(result)
+            if isinstance(parsed_result, dict) and "technical_skills" in parsed_result:
+                return parsed_result["technical_skills"]
+        except json.JSONDecodeError:
+            skills = [skill.strip() for skill in result.split('\n') if skill.strip()]
+            return skills[:20]
+            
     except Exception as e:
         print(f"Error in AI analysis: {e}")
         return []
     
+
+def optimize_latex_content(latex_code: str, keywords: List[str]) -> str:
+    try:
+        if not latex_code.strip().startswith('\\documentclass'):
+            raise ValueError("Invalid LaTeX: Must start with \\documentclass")
+        if not latex_code.strip().endswith('\\end{document}'):
+            raise ValueError("Invalid LaTeX: Must end with \\end{document}")
+
+        response = client.chat.completions.create(
+            model='gpt-4',
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert at optimizing LaTeX resumes. Your task is to:
+                    1. Analyze the given LaTeX code
+                    2. Incorporate the provided keywords naturally
+                    3. Maintain proper LaTeX syntax
+                    4. Ensure the modifications look professional
+                    5. Keep the original structure and formatting
+                    6. Only add keywords where they make sense contextually
+                    
+                    IMPORTANT: 
+                    - You must return the COMPLETE LaTeX document
+                    - Start with \documentclass and end with \end{document}
+                    - Do not truncate or skip any sections
+                    - Do not add any explanatory text, only return the LaTeX code"""
+                },
+                {
+                    "role": "user",
+                    "content": f"""Please optimize this LaTeX resume by incorporating these keywords: {', '.join(keywords)}
+                    
+                    LaTeX Code:
+                    {latex_code}"""
+                }
+            ],
+            temperature=0.3,
+            max_tokens=4000  
+        )
+
+        optimized_latex = response.choices[0].message.content.strip()
+
+        if not optimized_latex.startswith('\\documentclass'):
+            raise ValueError("API returned invalid LaTeX: Missing document start")
+        if not optimized_latex.endswith('\\end{document}'):
+            raise ValueError("API returned invalid LaTeX: Missing document end")
+        optimized_latex = optimized_latex.replace("```latex", "").replace("```", "").strip()
+
+        return optimized_latex
+    except Exception as e:
+        print(f"LaTeX optimization error: {str(e)}")
+        raise Exception(f"Failed to optimize LaTeX: {str(e)}")
+
+
+
+
 
 def update_resume(resume_text: str, keywords: list = []) -> str:
     
