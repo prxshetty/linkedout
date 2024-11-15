@@ -176,12 +176,26 @@ def analyze_with_ai(text: str) -> List[str]:
         return []
     
 
-def optimize_latex_content(latex_code: str, keywords: List[str]) -> str:
+def optimize_latex_content(latex_code: str, keywords: List[str], optimization_level: int = 5) -> str:
     try:
+        if not 1 <= optimization_level <=10:
+            raise ValueError("Optimization level must be between 1 and 10")
         if not latex_code.strip().startswith('\\documentclass'):
             raise ValueError("Invalid LaTeX: Must start with \\documentclass")
         if not latex_code.strip().endswith('\\end{document}'):
             raise ValueError("Invalid LaTeX: Must end with \\end{document}")
+        level_description = {
+            "1-3": "Make minimal, subtle changes. Only add keywords where they perfectly fit.",
+            "4-7": "Make moderate changes, naturally incorporating keywords while maintaining authenticity.",
+            "8-10": "Make significant changes to maximize keyword presence while keeping content professional."
+        }
+
+        if optimization_level <=3:
+            level_guide = level_description["1-3"]
+        elif optimization_level <=7:
+            level_guide = level_description["4-7"]
+        else:
+            level_guide = level_description["8-10"]
 
         response = client.chat.completions.create(
             model='gpt-4',
@@ -195,6 +209,9 @@ def optimize_latex_content(latex_code: str, keywords: List[str]) -> str:
                     4. Ensure the modifications look professional
                     5. Keep the original structure and formatting
                     6. Only add keywords where they make sense contextually
+
+                    Optimization Level: {optimization_level}/10
+                    Strategy: {level_guide}
                     
                     IMPORTANT: 
                     - You must return the COMPLETE LaTeX document

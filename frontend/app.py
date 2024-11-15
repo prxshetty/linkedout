@@ -95,6 +95,20 @@ elif choice == "Upload Resume":
             help="Enter each keyword on a new line"
         )
         
+        optimization_level = st.slider(
+            "Select Optimization Level",
+            min_value = 1,
+            max_value = 10,
+            value = 5,
+            help = "1: Minimal changes, 10: Maximum Optimization"
+        )
+        st.markdown("""
+        **Optimization Level Guide:**
+        - 1-3: Subtle changes, minimal keyword insertion
+        - 4-7: Balanced optimization with natural keyword integration
+        - 8-10: Aggressive optimization with maximum keyword presence
+        """)
+
         if st.button("Optimize Resume"):
             if not latex_code or not keywords:
                 st.error("Please provide both LaTeX code and keywords")
@@ -112,7 +126,8 @@ elif choice == "Upload Resume":
                 "http://localhost:8000/optimize_latex",
                 json={
                     "latex_code": latex_code,
-                    "keywords": keywords.split('\n')
+                    "keywords": keywords.split('\n'),
+                    "optimization_level" : optimization_level
                 }
             )
                 

@@ -9,6 +9,7 @@ class JobDescription(BaseModel):
 class LatexOptimization(BaseModel):
     latex_code : str
     keywords : list[str]
+    optimization_level : int = 5
 
 app = FastAPI()
 
@@ -26,7 +27,7 @@ async def analyze_job_with_ai(job: JobDescription):
 @app.post("/optimize_latex")
 async def optimize_latex(data: LatexOptimization):
     try:
-        optimized_latex = optimize_latex_content(data.latex_code, data.keywords)
+        optimized_latex = optimize_latex_content(data.latex_code, data.keywords, data.optimization_level)
         return {
             "status": "success",
             "optimized_latex": optimized_latex
