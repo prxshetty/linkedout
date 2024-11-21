@@ -114,16 +114,16 @@ elif choice == "Upload Resume":
                 st.error("Please provide both LaTeX code and keywords")
                 st.stop()
                 
-            if not latex_code.strip().startswith('\\documentclass'):
-                st.error("LaTeX code must start with \\documentclass")
-                st.stop()
+            # if not latex_code.strip().startswith('\\documentclass'):
+            #     st.error("LaTeX code must start with \\documentclass")
+            #     st.stop()
                 
             if not latex_code.strip().endswith('\\end{document}'):
                 st.error("LaTeX code must end with \\end{document}")
                 st.stop()
 
             response = requests.post(
-                "http://localhost:8000/optimize_latex",
+                "http://localhost:8000/optimize_sections",
                 json={
                     "latex_code": latex_code,
                     "keywords": keywords.split('\n'),
