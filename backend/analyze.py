@@ -1,6 +1,6 @@
 from backend.nlp import extract_keywords
 from backend.nlp import analyze_with_ai
-
+from backend.nlp import optimize_resume_sections
 def analyze_job_description(job_description: str):
     try:
         keywords = extract_keywords(job_description)
@@ -35,3 +35,6 @@ def analyze_job_description_with_ai(job_description):
             "status" : "error",
             "message" : str(e)
         }
+    
+def optimize_resume_sections_wrapper(latex_code: str, keywords: list, optimization_level: int = 5) -> str:
+    return optimize_resume_sections(latex_code, keywords, optimization_level)

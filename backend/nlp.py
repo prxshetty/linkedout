@@ -2,13 +2,12 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
-from typing import List
+from typing import List, Dict
 import re
 import spacy
 import json
 from sklearn.feature_extraction.text import TfidfVectorizer
 import openai
-from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from difflib import get_close_matches
@@ -18,11 +17,11 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if not OPENAI_API_KEY:
     raise ValueError("No OpenAI API key found. Please set OPENAI_API_KEY in your .env file")
 
-openai.api_key = OPENAI_API_KEY
-client = OpenAI(api_key = OPENAI_API_KEY)
-nltk.download('punkt', quiet = False)
-nltk.download('stopwords', quiet = False)
-nltk.download('wordnet', quiet = False)
+# openai.api_key = OPENAI_API_KEY
+# client = OpenAI(api_key = OPENAI_API_KEY)
+# nltk.download('punkt', quiet = False)
+# nltk.download('stopwords', quiet = False)
+# nltk.download('wordnet', quiet = False)
 
 data_science_keywords = {
     'machine learning', 'deep learning', 'neural networks', 'artificial intelligence', 'ai',
@@ -72,6 +71,88 @@ except LookupError:
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 nlp = spacy.load('en_core_web_sm')
+def escape_latex(text: str) -> str:
+    """
+    Escapes LaTeX special characters in text to prevent compilation errors.
+    
+    Args:
+        text (str): The text to escape.
+    
+    Returns:
+        str: The escaped text.
+    """
+    replacements = {
+        '&': r'\&',
+        '%': r'\%',
+        '$': r'\$',
+        '#': r'\#',
+        '_': r'\_',
+        '{': r'\{',
+        '}': r'\}',
+        '~': r'\textasciitilde{}',
+        '^': r'\textasciicircum{}',
+        '\\': r'\textbackslash{}',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+def validate_latex(latex_code: str) -> bool:
+    return latex_code.strip().startswith(r'\documentclass') and latex_code.strip().endswith(r'\end{document}')
+
+def extract_sections(latex_code: str) -> Dict[str, List[str]]:
+    """Extract sections and their bullet points from LaTeX code."""
+    sections = {
+        'experience': [],
+        'projects': [],
+        'technical_skills': []
+    }
+    exp_pattern = r'\\section{Experience}(.*?)(?=\\section|\\end{document})'
+    exp_match = re.search(exp_pattern, latex_code, re.DOTALL)
+    if exp_match:
+        sections['experience'] = re.findall(r'\\resumeItem{(.*?)}', exp_match.group(1))
+    
+    proj_pattern = r'\\section{Projects}(.*?)(?=\\section|\\end{document})'
+    proj_match = re.search(proj_pattern, latex_code, re.DOTALL)
+    if proj_match:
+        sections['projects'] = re.findall(r'\\resumeItem{(.*?)}', proj_match.group(1))
+    
+    tech_pattern = r'\\section{Technical Skills}(.*?)(?=\\section|\\end{document})'
+    tech_match = re.search(tech_pattern, latex_code, re.DOTALL)
+    if tech_match:
+        sections['technical_skills'] = [tech_match.group(1)]
+    
+    return sections
+
+def replace_sections(latex_code: str, optimized_sections: Dict[str, List[str]]) -> str:
+    result = latex_code
+    
+    for section_key, items in optimized_sections.items():
+        if not items:
+            continue
+        
+        if section_key in ['experience', 'projects']:
+            section_pattern = rf'(\\section{{{section_key.capitalize()}}}.*?\\resumeSubHeadingListStart)(.*?)(\\resumeSubHeadingListEnd)'
+            section_match = re.search(section_pattern, result, re.DOTALL | re.IGNORECASE)
+            
+            if section_match:
+                formatted_items = []
+                for item in items:
+                    cleaned_item = (
+                        item.strip()
+                           .replace('Enhanced bullet point:', '')
+                           .replace('Improved bullet point:', '')
+                    )
+                    cleaned_item = escape_latex(cleaned_item)
+                    formatted_items.append(f"      \\resumeItem{{{cleaned_item}}}")
+                
+                replacement = f"{section_match.group(1)}\n"
+                replacement += "\n".join(formatted_items)
+                replacement += f"\n{section_match.group(3)}"
+                
+                result = result[:section_match.start()] + replacement + result[section_match.end():]
+    
+    return result
 
 def extract_keywords(text: str) -> List[str]:
     print(f'Original text length: {len(text)}')
@@ -83,13 +164,14 @@ def extract_keywords(text: str) -> List[str]:
         tokens = text.lower().split()
     keywords = [
         lemmatizer.lemmatize(token)
-        for token in tokens if token.isalpha() and token not in stop_words and len(token)>2
+        for token in tokens if token.isalpha() and token not in stop_words and len(token) > 2
     ]
     unique_keywords = list(dict.fromkeys(keywords))
     technical_keywords = identify_technical_keywords(text, unique_keywords)
     return technical_keywords
 
-def identify_technical_keywords(text:str, keywords:List[str]) -> List[str]:
+def identify_technical_keywords(text: str, keywords: List[str]) -> List[str]:
+    """Identify technical keywords using NER and TF-IDF."""
     doc = nlp(text)
     ner_keywords = [ent.text.lower() for ent in doc.ents if ent.label_ in {
         # 'ORG',
@@ -133,20 +215,11 @@ def identify_technical_keywords(text:str, keywords:List[str]) -> List[str]:
             unique_terms.append(term)
     
     return unique_terms[:50]
-    # for word in combine_keywords:
-    #     if any(term in data_science_keywords for term in word.split()):
-    #         technical_terms.append(word)
-    #     else:
-    #         if any (token.pos_ in {'NOUN', 'PROPN'} for token in nlp(word)):
-    #             technical_terms.append(word)
-    # text_lower = text.lower()
-    # technical_terms.sort(key = lambda x: text_lower.count(x), reverse = True)
-    # return list(dict.fromkeys(technical_terms))[:40]
 
 def analyze_with_ai(text: str) -> List[str]:
     try:
-        response = client.chat.completions.create(
-            model = 'gpt-4o-mini',
+        response = openai.ChatCompletion.create(
+            model='gpt-4',
             messages=[
                 {
                     "role": "system",
@@ -175,79 +248,63 @@ def analyze_with_ai(text: str) -> List[str]:
         print(f"Error in AI analysis: {e}")
         return []
     
-
-def optimize_latex_content(latex_code: str, keywords: List[str], optimization_level: int = 5) -> str:
+def optimize_bullet_point(bullet: str, keywords: List[str], optimization_level: int = 5) -> str:
     try:
-        if not 1 <= optimization_level <=10:
-            raise ValueError("Optimization level must be between 1 and 10")
-        if not latex_code.strip().startswith('\\documentclass'):
-            raise ValueError("Invalid LaTeX: Must start with \\documentclass")
-        if not latex_code.strip().endswith('\\end{document}'):
-            raise ValueError("Invalid LaTeX: Must end with \\end{document}")
         level_description = {
-            "1-3": "Make minimal, subtle changes. Only add keywords where they perfectly fit.",
-            "4-7": "Make moderate changes, naturally incorporating keywords while maintaining authenticity.",
-            "8-10": "Make significant changes to maximize keyword presence while keeping content professional."
+            range(1, 4): "Make minimal, subtle changes. Only add keywords where they perfectly fit.",
+            range(4, 8): "Make moderate changes, naturally incorporating keywords while maintaining authenticity.",
+            range(8, 11): "Make significant changes to maximize keyword presence while keeping content professional."
         }
-
-        if optimization_level <=3:
-            level_guide = level_description["1-3"]
-        elif optimization_level <=7:
-            level_guide = level_description["4-7"]
-        else:
-            level_guide = level_description["8-10"]
-
-        response = client.chat.completions.create(
-            model='gpt-4',
+        level_guide = "Make moderate changes, naturally incorporating keywords while maintaining authenticity."
+        for key_range, description in level_description.items():
+            if optimization_level in key_range:
+                level_guide = description
+                break
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are an expert at optimizing LaTeX resumes. Your task is to:
-                    1. Analyze the given LaTeX code
-                    2. Incorporate the provided keywords naturally
-                    3. Maintain proper LaTeX syntax
-                    4. Ensure the modifications look professional
-                    5. Keep the original structure and formatting
-                    6. Only add keywords where they make sense contextually
-
+                    "content": f"""You are an expert at optimizing resume bullet points.
                     Optimization Level: {optimization_level}/10
                     Strategy: {level_guide}
-                    
-                    IMPORTANT: 
-                    - You must return the COMPLETE LaTeX document
-                    - Start with \documentclass and end with \end{document}
-                    - Do not truncate or skip any sections
-                    - Do not add any explanatory text, only return the LaTeX code"""
+                    Task: Enhance the bullet point by incorporating the provided keywords naturally.
+                    Format: Return only the enhanced bullet point text without any prefix or formatting."""
                 },
                 {
                     "role": "user",
-                    "content": f"""Please optimize this LaTeX resume by incorporating these keywords: {', '.join(keywords)}
-                    
-                    LaTeX Code:
-                    {latex_code}"""
+                    "content": f"Keywords to incorporate: {', '.join(keywords)}\n\nOriginal bullet point: {bullet}"
                 }
             ],
             temperature=0.3,
-            max_tokens=4000  
+            max_tokens=150
         )
-
-        optimized_latex = response.choices[0].message.content.strip()
-
-        if not optimized_latex.startswith('\\documentclass'):
-            raise ValueError("API returned invalid LaTeX: Missing document start")
-        if not optimized_latex.endswith('\\end{document}'):
-            raise ValueError("API returned invalid LaTeX: Missing document end")
-        optimized_latex = optimized_latex.replace("```latex", "").replace("```", "").strip()
-
-        return optimized_latex
+        optimized_bullet = response.choices[0].message.content.strip()
+        return optimized_bullet
     except Exception as e:
-        print(f"LaTeX optimization error: {str(e)}")
+        print(f"Error in optimize_bullet_point: {str(e)}")
+        return bullet
+
+def optimize_resume_sections(latex_code: str, keywords: List[str], optimization_level: int = 5) -> str:
+    """Optimize the resume sections by enhancing bullet points with specified keywords."""
+    try:
+        if not validate_latex(latex_code):
+            raise ValueError("Invalid LaTeX: Must start with \\documentclass and end with \\end{document}")
+        
+        sections = extract_sections(latex_code)
+        optimized_sections = {}
+        
+        for section, items in sections.items():
+            optimized_items = []
+            for item in items:
+                optimized_item = optimize_bullet_point(item, keywords, optimization_level)
+                optimized_items.append(optimized_item)
+            optimized_sections[section] = optimized_items
+        
+        optimized_latex = replace_sections(latex_code, optimized_sections)
+        return optimized_latex
+        
+    except Exception as e:
         raise Exception(f"Failed to optimize LaTeX: {str(e)}")
 
-
-
-
-
-def update_resume(resume_text: str, keywords: list = []) -> str:
-    
-    return updated_resume
