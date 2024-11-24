@@ -4,6 +4,7 @@ from backend.analyze import analyze_job_description, analyze_job_description_wit
 
 class JobDescription(BaseModel):
     description: str
+    num_keywords: int = 10
 
 class LatexOptimization(BaseModel):
     latex_code: str

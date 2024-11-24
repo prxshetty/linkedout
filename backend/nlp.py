@@ -7,21 +7,16 @@ import re
 import spacy
 import json
 from sklearn.feature_extraction.text import TfidfVectorizer
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from difflib import get_close_matches
-
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if not OPENAI_API_KEY:
     raise ValueError("No OpenAI API key found. Please set OPENAI_API_KEY in your .env file")
 
-# openai.api_key = OPENAI_API_KEY
-# client = OpenAI(api_key = OPENAI_API_KEY)
-# nltk.download('punkt', quiet = False)
-# nltk.download('stopwords', quiet = False)
-# nltk.download('wordnet', quiet = False)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 data_science_keywords = {
     'machine learning', 'deep learning', 'neural networks', 'artificial intelligence', 'ai',
@@ -107,52 +102,36 @@ def extract_sections(latex_code: str) -> Dict[str, List[str]]:
         'projects': [],
         'technical_skills': []
     }
-    exp_pattern = r'\\section{Experience}(.*?)(?=\\section|\\end{document})'
-    exp_match = re.search(exp_pattern, latex_code, re.DOTALL)
-    if exp_match:
-        sections['experience'] = re.findall(r'\\resumeItem{(.*?)}', exp_match.group(1))
+    section_patterns = {
+        'experience': r'\\section{Experience}(.*?)\\resumeSubHeadingListEnd',
+        'projects': r'\\section{Projects}(.*?)\\resumeSubHeadingListEnd',
+        'technical_skills': r'\\section{Technical Skills}(.*?)\\end{itemize}',
+    }
     
-    proj_pattern = r'\\section{Projects}(.*?)(?=\\section|\\end{document})'
-    proj_match = re.search(proj_pattern, latex_code, re.DOTALL)
-    if proj_match:
-        sections['projects'] = re.findall(r'\\resumeItem{(.*?)}', proj_match.group(1))
-    
-    tech_pattern = r'\\section{Technical Skills}(.*?)(?=\\section|\\end{document})'
-    tech_match = re.search(tech_pattern, latex_code, re.DOTALL)
-    if tech_match:
-        sections['technical_skills'] = [tech_match.group(1)]
+    for key, pattern in section_patterns.items():
+        match = re.search(pattern, latex_code, re.DOTALL | re.IGNORECASE)
+        if match:
+            section_content = match.group(1).strip()
+            sections[key].append(section_content)
     
     return sections
 
 def replace_sections(latex_code: str, optimized_sections: Dict[str, List[str]]) -> str:
     result = latex_code
     
-    for section_key, items in optimized_sections.items():
-        if not items:
-            continue
-        
-        if section_key in ['experience', 'projects']:
-            section_pattern = rf'(\\section{{{section_key.capitalize()}}}.*?\\resumeSubHeadingListStart)(.*?)(\\resumeSubHeadingListEnd)'
-            section_match = re.search(section_pattern, result, re.DOTALL | re.IGNORECASE)
-            
-            if section_match:
-                formatted_items = []
-                for item in items:
-                    cleaned_item = (
-                        item.strip()
-                           .replace('Enhanced bullet point:', '')
-                           .replace('Improved bullet point:', '')
-                    )
-                    cleaned_item = escape_latex(cleaned_item)
-                    formatted_items.append(f"      \\resumeItem{{{cleaned_item}}}")
-                
-                replacement = f"{section_match.group(1)}\n"
-                replacement += "\n".join(formatted_items)
-                replacement += f"\n{section_match.group(3)}"
-                
-                result = result[:section_match.start()] + replacement + result[section_match.end():]
+    for section, contents in optimized_sections.items():
+        for content in contents:
+            pattern = re.compile(r'(\\section{' + re.escape(section.capitalize()) + r'})(.*?)(\\resumeSubHeadingListEnd)', re.DOTALL | re.IGNORECASE)
+            match = pattern.search(latex_code)
+            if match:
+                optimized_content = content
+                latex_code = latex_code.replace(match.group(2), optimized_content)
     
-    return result
+    return latex_code
+def modify_quotes(text: str) -> str:
+    text = text.replace('"', r'``')
+    text = text.replace("'", r"''")
+    return text
 
 def extract_keywords(text: str) -> List[str]:
     print(f'Original text length: {len(text)}')
@@ -216,78 +195,108 @@ def identify_technical_keywords(text: str, keywords: List[str]) -> List[str]:
     
     return unique_terms[:50]
 
-def analyze_with_ai(text: str) -> List[str]:
+def analyze_with_ai(text: str, num_keywords: int = 20) -> List[str]:
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model='gpt-4',
             messages=[
                 {
                     "role": "system",
-                    "content": """You are an expert technical recruiter specializing in data science and AI roles. 
-                    Your task is to analyze job descriptions and extract key technical skills, tools, and requirements."""
+                    "content": f"""You are an expert ATS (Applicant Tracking System) and HR professional specializing in technical hiring.
+                    Your task is to extract EXACTLY {num_keywords} keywords from the job description that would be most relevant for HR screening.
+                    
+                    Focus on:
+                    1. Core technical skills (programming languages, frameworks, tools)
+                    2. Industry-standard technologies and platforms
+                    3. Required technical certifications
+                    4. Key technical methodologies and practices
+                    
+                    DO NOT include:
+                    - Generic soft skills (like "team player", "communication")
+                    - Basic computer skills (like "Microsoft Office")
+                    - Non-technical requirements (like "Bachelor's degree")
+                    - Company-specific tools or systems
+                    
+                    Format your response as a JSON object:
+                    {{
+                        "keywords": [
+                            "exactly {num_keywords} technical keywords here"
+                        ]
+                    }}
+                    
+                    IMPORTANT: The keywords array MUST contain EXACTLY {num_keywords} items."""
                 },
                 {
                     "role": "user",
-                    "content": f"Analyze this job description and extract key technical requirements:\n\n{text}"
+                    "content": f"""Extract exactly {num_keywords} technical keywords from this job description that would help a candidate's resume pass ATS screening and impress HR managers:
+
+{text}"""
                 }
             ],
             temperature=0.2,
-            max_tokens=400
+            max_tokens=800
         )
         
         result = response.choices[0].message.content
         try:
             parsed_result = json.loads(result)
-            if isinstance(parsed_result, dict) and "technical_skills" in parsed_result:
-                return parsed_result["technical_skills"]
+            if "keywords" in parsed_result:
+                keywords = parsed_result["keywords"]
+                if len(keywords) > num_keywords:
+                    keywords = keywords[:num_keywords]
+                elif len(keywords) < num_keywords:
+                    return analyze_with_ai(text, num_keywords)
+                return keywords
+            
         except json.JSONDecodeError:
-            skills = [skill.strip() for skill in result.split('\n') if skill.strip()]
-            return skills[:20]
+            skills = [
+                skill.strip() 
+                for skill in result.split('\n') 
+                if skill.strip() and not any(x in skill.lower() for x in [
+                    "degree", "year", "experience", "team", "communication"
+                ])
+            ]
+            if len(skills) >= num_keywords:
+                return skills[:num_keywords]
+            return analyze_with_ai(text, num_keywords)
             
     except Exception as e:
         print(f"Error in AI analysis: {e}")
         return []
     
-def optimize_bullet_point(bullet: str, keywords: List[str], optimization_level: int = 5) -> str:
+def optimize_section(section: str, keywords: List[str], optimization_level: int) -> str:
     try:
-        level_description = {
-            range(1, 4): "Make minimal, subtle changes. Only add keywords where they perfectly fit.",
-            range(4, 8): "Make moderate changes, naturally incorporating keywords while maintaining authenticity.",
-            range(8, 11): "Make significant changes to maximize keyword presence while keeping content professional."
-        }
-        level_guide = "Make moderate changes, naturally incorporating keywords while maintaining authenticity."
-        for key_range, description in level_description.items():
-            if optimization_level in key_range:
-                level_guide = description
-                break
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        prompt = f"""
+You are an expert at optimizing resume sections written in LaTeX. Your task is to enhance the content within the following LaTeX section by incorporating the provided keywords naturally. 
+
+Please preserve all LaTeX commands and formatting. Only modify the text within the \\\resumeSubheading and \\\resumeItem commands as necessary to improve clarity, impact, and keyword optimization based on the given keywords and optimization level.
+
+### Optimization Level: {optimization_level}/10
+### Keywords: {', '.join(keywords)}
+
+### Original Section:
+{section}
+
+### Optimized Section:
+"""
+        response = client.chat.completions.create(
+            model="gpt-4",
             messages=[
-                {
-                    "role": "system",
-                    "content": f"""You are an expert at optimizing resume bullet points.
-                    Optimization Level: {optimization_level}/10
-                    Strategy: {level_guide}
-                    Task: Enhance the bullet point by incorporating the provided keywords naturally.
-                    Format: Return only the enhanced bullet point text without any prefix or formatting."""
-                },
-                {
-                    "role": "user",
-                    "content": f"Keywords to incorporate: {', '.join(keywords)}\n\nOriginal bullet point: {bullet}"
-                }
+                {"role": "system", "content": "You are an expert at optimizing resume sections written in LaTeX."},
+                {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=150
+            max_tokens=1500
         )
-        optimized_bullet = response.choices[0].message.content.strip()
-        return optimized_bullet
+        
+        optimized_section = response.choices[0].message.content.strip()
+        return optimized_section
+    
     except Exception as e:
-        print(f"Error in optimize_bullet_point: {str(e)}")
-        return bullet
+        print(f"Error in optimize_section: {e}")
+        return section
 
 def optimize_resume_sections(latex_code: str, keywords: List[str], optimization_level: int = 5) -> str:
-    """Optimize the resume sections by enhancing bullet points with specified keywords."""
     try:
         if not validate_latex(latex_code):
             raise ValueError("Invalid LaTeX: Must start with \\documentclass and end with \\end{document}")
@@ -295,16 +304,15 @@ def optimize_resume_sections(latex_code: str, keywords: List[str], optimization_
         sections = extract_sections(latex_code)
         optimized_sections = {}
         
-        for section, items in sections.items():
-            optimized_items = []
-            for item in items:
-                optimized_item = optimize_bullet_point(item, keywords, optimization_level)
-                optimized_items.append(optimized_item)
-            optimized_sections[section] = optimized_items
+        for section, contents in sections.items():
+            optimized_contents = []
+            for content in contents:
+                optimized_content = optimize_section(content, keywords, optimization_level)
+                optimized_contents.append(optimized_content)
+            optimized_sections[section] = optimized_contents
         
         optimized_latex = replace_sections(latex_code, optimized_sections)
         return optimized_latex
         
     except Exception as e:
         raise Exception(f"Failed to optimize LaTeX: {str(e)}")
-
