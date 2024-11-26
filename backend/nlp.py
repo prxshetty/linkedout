@@ -5,6 +5,7 @@ from nltk.stem import WordNetLemmatizer
 from typing import List, Dict
 import re
 import spacy
+import time
 import json
 from sklearn.feature_extraction.text import TfidfVectorizer
 from openai import OpenAI
@@ -280,7 +281,7 @@ Please preserve all LaTeX commands and formatting. Only modify the text within t
 ### Optimized Section:
 """
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are an expert at optimizing resume sections written in LaTeX."},
                 {"role": "user", "content": prompt}
@@ -298,6 +299,7 @@ Please preserve all LaTeX commands and formatting. Only modify the text within t
 
 def optimize_resume_sections(latex_code: str, keywords: List[str], optimization_level: int = 5) -> str:
     try:
+        start_time = time.time()
         if not validate_latex(latex_code):
             raise ValueError("Invalid LaTeX: Must start with \\documentclass and end with \\end{document}")
         
@@ -312,7 +314,8 @@ def optimize_resume_sections(latex_code: str, keywords: List[str], optimization_
             optimized_sections[section] = optimized_contents
         
         optimized_latex = replace_sections(latex_code, optimized_sections)
-        return optimized_latex
+        total_time = time.time() - start_time
+        return optimized_latex, total_time
         
     except Exception as e:
         raise Exception(f"Failed to optimize LaTeX: {str(e)}")

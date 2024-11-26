@@ -50,4 +50,8 @@ def analyze_job_description_with_ai(job_description):
         return error_response
     
 def optimize_resume_sections_wrapper(latex_code: str, keywords: list, optimization_level: int = 5) -> str:
-    return optimize_resume_sections(latex_code, keywords, optimization_level)
+    optimized_latex, processing_time = optimize_resume_sections(latex_code, keywords, optimization_level)
+    return {
+        "optimized_latex": optimized_latex,
+        "processing_time" : round(processing_time, 2)
+    }

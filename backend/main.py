@@ -49,14 +49,15 @@ async def optimize_latex(data: LatexOptimization):
 @app.post("/optimize_sections")
 async def optimize_sections(data: OptimizeResumeSectionsRequest):
     try:
-        optimized_latex = optimize_resume_sections_wrapper(
+        result = optimize_resume_sections_wrapper(
             data.latex_code,
             data.keywords,
             data.optimization_level
         )
         return {
             "status": "success",
-            "optimized_latex": optimized_latex
+            "optimized_latex": result["optimized_latex"],
+            "processing_time" : result["processing_time"]
         }
     except Exception as e:
         return {

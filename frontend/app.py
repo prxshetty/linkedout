@@ -13,6 +13,12 @@ if choice == "Home":
 
     if sub_menu == "Scrape Job Description":
         st.subheader("Job Description Analysis")
+
+        if 'confirmed_keywords' not in st.session_state:
+            st.session_state.confirmed_keywords = []
+        if 'analysis_complete' not in st.session_state:
+            st.session_state.analysis_complete = False
+
         url = st.text_input("Enter the Job Post URL")
         if st.button("Scrape URL"):
             if url:
@@ -28,11 +34,8 @@ if choice == "Home":
                             st.write("Keywords:", keywords)
                             for kw in keywords:
                                 st.write(f"- {kw}")
-                            
-                            confirm = st.checkbox("Confirm Keywords?")
-                            if confirm:
-                                st.session_state.confirmed_keywords = keywords
-                                st.success("Keywords confirmed!")
+                            st.session_state.confirmed_keywords = keywords
+                            st.session_state.analysis_complete = True
                         else:
                             st.warning("No keywords were extracted.")
                     else:
@@ -77,6 +80,15 @@ if choice == "Home":
             else:
                 st.error(f"Error analyzing job description: {response.text}")
 
+        if st.session_state.analysis_complete:
+            confirm = st.checkbox("Confirm Keywords?")
+            if confirm:
+                st.session_state.confirmed_keywords = st.session_state.temp_keywords
+                st.success("Keywords confirmed and saved!")
+                st.write("Confirmed Keywords:")
+                for kw in st.session_state.confirmed_keywords:
+                    st.write(f"- {kw}")
+
     elif sub_menu == "Upload Resume":
         st.subheader("Upload your Resume")
         upload_type = st.radio("Select upload type", ["Resume File", "Overleaf Code"])
@@ -97,6 +109,7 @@ if choice == "Home":
                             st.write("Upload Failed: {response.text}")
                 else:
                     st.write("Please upload a file first")
+        
 
         elif upload_type == "Overleaf Code":
             st.markdown("""
@@ -110,12 +123,23 @@ if choice == "Home":
                 height=300,
                 help="Paste your entire LaTeX document, including \\documentclass and \\end{document}"
             )
-            
-            keywords = st.text_area(
-                "Enter keywords (one per line)",
-                height=100,
-                help="Enter each keyword on a new line"
-            )
+            use_confirmed_keywords = False
+            if 'confirmed_keywords' in st.session_state and st.session_state.confirmed_keywords:
+                use_confirmed_keywords = st.checkbox("Use confirmed keywords?", value = True)
+            if use_confirmed_keywords:
+                keywords = '\n'.join(st.session_state.confirmed_keywords)
+                st.text_area(
+                    "Confirmed Keywords",
+                    height=100,
+                    help="Enter each keyword on a new line",
+                    disabled = True
+                )
+            else:
+                keywords = st.text_area(
+                    "Enter keywords (one per line)",
+                    height=100,
+                    help="Enter each keyword on a new line"
+                )
             
             optimization_level = st.slider(
                 "Select Optimization Level",
@@ -155,7 +179,9 @@ if choice == "Home":
                     data = response.json()
                     if data.get("status") == "success":
                         optimized_latex_result = data.get("optimized_latex")
+                        processing_time = data.get("processing_time")
                         st.success("Resume optimized successfully!")
+                        st.write(f"Processing Time: {processing_time} seconds")
                         st.text_area("Optimized LaTeX Code", optimized_latex_result, height=300)
                         if st.button("Download Optimized LaTeX"):
                             st.download_button(
