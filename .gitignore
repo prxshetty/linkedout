@@ -1,2 +1,14 @@
-/venv
+# Python
+__pycache__/
+*.py[cod]
+venv/
 .env
+
+# Node
+node_modules/
+.next/
+.env.local
+
+# IDE
+.vscode/
+.idea/
